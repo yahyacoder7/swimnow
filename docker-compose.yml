@@ -43,7 +43,7 @@ services:
     ports:
       # host:container — the app connects to localhost:<POSTGRES_PORT>.
       # Change the LEFT number if 5432 is already taken on your machine.
-      - "${POSTGRES_PORT}"
+      - "${POSTGRES_PORT}:5432"
 
     volumes:
       # ⚠️ PostgreSQL 18 BREAKING CHANGE — the data directory moved:
