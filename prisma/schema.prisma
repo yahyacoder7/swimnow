@@ -1,0 +1,259 @@
+// =============================================================================
+// SwimNow — Prisma schema
+// Based on the L3PRO / SNC 2026-2027 practical work:
+// "Web-Based Social Network with User Profiles, Publications, Reactions,
+//  Comments, Friendship and Private Messaging".
+//
+// Media columns (profile_photo, cover_photo, image) store MinIO OBJECT KEYS,
+// not the bytes — files live in MinIO, the database keeps the reference.
+// =============================================================================
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// A post/comment reaction can be either a like or a dislike.
+enum ReactionType {
+  LIKE
+  DISLIKE
+}
+
+// Friendship request lifecycle: pending -> accepted / rejected.
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+// The notification kinds listed in the PDF.
+enum NotificationType {
+  FRIEND_REQUEST
+  FRIEND_ACCEPTED
+  NEW_MESSAGE
+  POST_LIKE
+  POST_DISLIKE
+  POST_COMMENT
+  COMMENT_LIKE
+  COMMENT_DISLIKE
+}
+
+// -----------------------------------------------------------------------------
+// users
+// -----------------------------------------------------------------------------
+model User {
+  id           String   @id @default(cuid())
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  email        String   @unique
+  password     String // hashed, never plain text
+  bio          String?  @db.Text
+  profilePhoto String?  @map("profile_photo") // MinIO key, e.g. profiles/<id>/x.jpg
+  coverPhoto   String?  @map("cover_photo") // MinIO key, e.g. covers/<id>/x.jpg
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  posts                    Post[]
+  comments                 Comment[]
+  postReactions            PostReaction[]
+  commentReactions         CommentReaction[]
+  sentFriendships          Friendship[]              @relation("FriendshipSender")
+  receivedFriendships      Friendship[]              @relation("FriendshipReceiver")
+  sentMessages             Message[]                 @relation("MessageSender")
+  conversationParticipants ConversationParticipant[]
+  notifications            Notification[]
+
+  @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// posts
+// -----------------------------------------------------------------------------
+model Post {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  content   String   @db.Text // required: a post must have text (images are optional)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments      Comment[]
+  reactions     PostReaction[]
+  media         PostMedia[]
+  notifications Notification[]
+
+  @@index([userId, createdAt])
+  @@map("posts")
+}
+
+// -----------------------------------------------------------------------------
+// post_media  (one row per image on a post — supports multiple images)
+// -----------------------------------------------------------------------------
+model PostMedia {
+  id        String   @id @default(cuid())
+  postId    String   @map("post_id")
+  key       String // MinIO object key, e.g. posts/<postId>/0.jpg
+  position  Int      @default(0) // display order within the post
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, position])
+  @@map("post_media")
+}
+
+// -----------------------------------------------------------------------------
+// post_reactions  (one reaction per user per post — enforced by @@unique)
+// -----------------------------------------------------------------------------
+model PostReaction {
+  id        String       @id @default(cuid())
+  postId    String       @map("post_id")
+  userId    String       @map("user_id")
+  reaction  ReactionType
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@map("post_reactions")
+}
+
+// -----------------------------------------------------------------------------
+// comments
+// -----------------------------------------------------------------------------
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String   @map("post_id")
+  userId    String   @map("user_id")
+  content   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  post          Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions     CommentReaction[]
+  notifications Notification[]
+
+  @@index([postId, createdAt])
+  @@map("comments")
+}
+
+// -----------------------------------------------------------------------------
+// comment_reactions  (one reaction per user per comment)
+// -----------------------------------------------------------------------------
+model CommentReaction {
+  id        String       @id @default(cuid())
+  commentId String       @map("comment_id")
+  userId    String       @map("user_id")
+  reaction  ReactionType
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@map("comment_reactions")
+}
+
+// -----------------------------------------------------------------------------
+// friendships  (sender -> receiver, with status)
+// -----------------------------------------------------------------------------
+model Friendship {
+  id         String           @id @default(cuid())
+  senderId   String           @map("sender_id")
+  receiverId String           @map("receiver_id")
+  status     FriendshipStatus @default(PENDING)
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  sender        User           @relation("FriendshipSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver      User           @relation("FriendshipReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  // NOTE: reverse-duplicate protection is a raw SQL unique index
+  // (LEAST/GREATEST) added in the init migration. See docs/bugs-fixes.md.
+
+  // fast lookup of pending requests for a receiver
+  @@index([receiverId, status])
+  @@map("friendships")
+}
+
+// -----------------------------------------------------------------------------
+// conversations  (a private chat between two users)
+// -----------------------------------------------------------------------------
+model Conversation {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now()) @map("created_at")
+  lastMessageAt DateTime? @map("last_message_at") // for sorting the chat list
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@map("conversations")
+}
+
+// -----------------------------------------------------------------------------
+// conversation_participants  (one row per user in a conversation; holds read state)
+// -----------------------------------------------------------------------------
+model ConversationParticipant {
+  id             String    @id @default(cuid())
+  conversationId String    @map("conversation_id")
+  userId         String    @map("user_id")
+  lastReadAt     DateTime? @map("last_read_at") // unread = messages after this timestamp
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_participants")
+}
+
+// -----------------------------------------------------------------------------
+// messages  (private messages inside a conversation)
+// -----------------------------------------------------------------------------
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String   @map("conversation_id")
+  senderId       String   @map("sender_id")
+  content        String   @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation  Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender        User           @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  // fast message history within a conversation
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+// -----------------------------------------------------------------------------
+// notifications  (typed targets — one nullable FK per related table)
+// -----------------------------------------------------------------------------
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String           @map("user_id") // recipient
+  type      NotificationType
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  postId       String? @map("post_id")
+  commentId    String? @map("comment_id")
+  messageId    String? @map("message_id")
+  friendshipId String? @map("friendship_id")
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post       Post?       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  comment    Comment?    @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  message    Message?    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  friendship Friendship? @relation(fields: [friendshipId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
