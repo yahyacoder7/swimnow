@@ -1,8 +1,12 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
-import { Logger } from '@nestjs/common';
 
 /**
  * Prisma 7 removed the built-in query engine, so a **driver adapter** is
@@ -17,14 +21,12 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
-   private readonly logger: Logger  = new Logger(PrismaService.name);
-  constructor(
-    private readonly config: ConfigService,
-   
-  ) {
+  private readonly logger = new Logger(PrismaService.name);
+
+  constructor(private readonly config: ConfigService) {
     super({
       adapter: new PrismaPg({
-        connectionString: config.getOrThrow('DATABASE_URL'),
+        connectionString: config.getOrThrow<string>('DATABASE_URL'),
       }),
     });
   }
@@ -35,7 +37,13 @@ export class PrismaService
       await this.$connect();
       this.logger.log('Prisma connected to database successfully');
     } catch (e) {
-      this.logger.error('Failed to connect to database');
+      // Log the real reason (bad URL, DB down…) but still let the app start —
+      // runtime queries surface through the PrismaExceptionFilter.
+      this.logger.error(
+        `Failed to connect to database: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
     }
   }
 
