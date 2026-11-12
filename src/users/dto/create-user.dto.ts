@@ -15,4 +15,4 @@ export const CreateUserDtoSchema = z.object({
     coverPhoto: z.string().optional(),  */
 })
 
-export type createUserDto = z.infer<typeof CreateUserDtoSchema>;
+export type CreateUserDto = z.infer<typeof CreateUserDtoSchema>;
