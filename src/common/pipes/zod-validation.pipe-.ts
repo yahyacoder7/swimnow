@@ -10,9 +10,15 @@ import { ZodType } from 'zod'; // type: any Zod schema (the rules object)
 export class ZodValidationPipe implements PipeTransform {
   constructor(private readonly schema: ZodType) {}
 
-  transform(value: any, metadata: ArgumentMetadata) {
+  transform(value: any) {
     const result = this.schema.safeParse(value);
+    /**
+ // عند النجاح
+{ success: true, data: { name: 'Ali', age: 20 } }
 
+// عند الفشل
+{ success: false, error: ZodError }
+ */
     if (!result.success) {
       throw new BadRequestException({
         message: 'Validation failed',
@@ -22,7 +28,7 @@ export class ZodValidationPipe implements PipeTransform {
         })),
       });
     }
-    
-    return result.data
+
+    return result.data;
   }
 }
