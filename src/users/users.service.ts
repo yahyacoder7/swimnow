@@ -20,20 +20,23 @@ export class UsersService {
     return users;
   }
 
-  findOne(id: string) {
+  async findOne(id: string) {
 
-  const user = this.prisma.user.findUnique({
+  const user = await this.prisma.user.findUnique({
       where: {
         id: id,
       },
     });
+    console.log('user:', user);
     return user;
   }
   update(id: string, updateUser: UpdateUserDto) {
-    
+    if(updateUser == null){
+      throw new Error('updateUser is null');
+    }
    const user = this.prisma.user.update({
       where: {
-        id: id,
+       id: id,
       },
       data: updateUser,
     });
