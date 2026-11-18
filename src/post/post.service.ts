@@ -21,4 +21,12 @@ export class PostService {
     });
     return post;
   }
+
+  async getPostById(id: string) {
+    const post = await this.prisma.post.findUnique({
+        where: { id},
+        
+    });
+    return post;
+  }
 }
