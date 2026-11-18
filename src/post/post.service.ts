@@ -13,4 +13,12 @@ export class PostService {
     });
     return post;
   }
+
+  async updatePost(id: string, dto: UpdatePostDto) {
+    const post = await this.prisma.post.update({
+        where: { id },
+        data: dto,
+    });
+    return post;
+  }
 }
