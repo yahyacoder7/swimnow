@@ -51,4 +51,16 @@ export class UsersService {
     });
     return user;
   }
+
+  async getUserPosts(id: string){
+    const posts = await this.prisma.post.findMany({
+      where: {
+        userId: id,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+    return posts;
+  }
 }
