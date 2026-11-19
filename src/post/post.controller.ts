@@ -1,6 +1,6 @@
 import { Controller } from '@nestjs/common';
 import { PostService } from './post.service';
-import { Post , Patch , Param  , Get , Body} from '@nestjs/common';
+import { Post , Patch , Param  , Get , Body , Delete} from '@nestjs/common';
 import type { CreatePostDto } from './dto/create-post.dto';
 import { CreatePostDtoSchema } from './dto/create-post.dto';
 import { UpdatePostDtoSchema } from './dto/update-post.dto';
@@ -26,6 +26,11 @@ export class PostController {
     @Get(':id')
     async getPostById(@Param('id') id: string) {
       return await this.postService.getPostById(id);
+    }
+
+    @Delete(':id')
+    async deletePost(@Param('id') id: string) {
+      return await this.postService.deletePost(id);
     }
 
     

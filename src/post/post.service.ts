@@ -29,4 +29,11 @@ export class PostService {
     });
     return post;
   }
+
+  async deletePost(id: string) {
+    const post = await this.prisma.post.delete({
+        where: { id },
+    });
+    return post;
+  }
 }
