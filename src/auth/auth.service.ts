@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SessionService } from './session.service';
 import type { UserLoginDto } from './dto/user-login.dto';
 import type { CreateSessionDto } from './dto/create-session.dto';
+import type { CreateUserDto } from '../users/dto/create-user.dto';
+import { CreateUserDtoSchema } from '../users/dto/create-user.dto';
 import * as bcrypt from 'bcrypt';
 @Injectable()
 export class AuthService {
@@ -19,7 +21,7 @@ export class AuthService {
    */
   private readonly DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 12);
 
-  async validateUser(dto: UserLoginDto): Promise<any> {
+  async validateUser(dto: UserLoginDto){
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -44,5 +46,9 @@ export class AuthService {
       sessionId,
     };
     return result;
+  }
+
+  async createUser(dto: CreateUserDto){
+    
   }
 }
